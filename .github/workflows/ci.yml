@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck unzip curl
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install bats-core shellcheck
+
+      - name: Shell lint
+        run: |
+          shellcheck -e SC2016,SC2001 bin/bunenv
+          shellcheck -e SC2016,SC2001 libexec/bunenv*
+          shellcheck -e SC2016,SC2001 bunenv.d/exec/*.bash
+
+      - name: Run unit tests
+        run: |
+          RUN_NETWORK_TESTS=0 bats test/*.bats
+
+  network-install-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats unzip curl
+
+      - name: Run network integration tests
+        run: |
+          RUN_NETWORK_TESTS=1 bats test/install-integration.bats
