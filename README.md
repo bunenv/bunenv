@@ -16,34 +16,67 @@ per-project, or globally.
 	3. `~/.bunenv/version`
 	4. `system`
 
-## Install
+## Installation
 
-### Homebrew (recommended)
+On systems with Homebrew, using a package manager is usually preferred.
+If a `bunenv` formula is not available yet, use the Basic Git Checkout method.
+
+### Using Package Managers
+
+#### Homebrew (when available)
 
 ```bash
-brew tap <your-tap>/tools
 brew install bunenv
 ```
 
-### From source
+If Homebrew reports no available formula for `bunenv`, install via Git checkout below.
 
-```bash
-git clone https://github.com/bunenv/bunenv.git ~/.bunenv-src
-export PATH="$HOME/.bunenv-src/bin:$PATH"
-```
-
-## Shell setup
-
-Add this to your shell startup file:
-
-```bash
-eval "$(bunenv init -)"
-```
-
-Or run the guided initializer:
+Set up your shell to load bunenv:
 
 ```bash
 bunenv init
+```
+
+Restart your shell so changes take effect.
+
+### Basic Git Checkout
+
+For a manual install that tracks the latest bunenv version:
+
+Clone bunenv into `~/.bunenv`:
+
+```bash
+git clone https://github.com/bunenv/bunenv.git ~/.bunenv
+```
+
+Set up your shell to load bunenv:
+
+```bash
+~/.bunenv/bin/bunenv init
+```
+
+For Fish shell:
+
+```bash
+echo 'status --is-interactive; and ~/.bunenv/bin/bunenv init - fish | source' >> ~/.config/fish/config.fish
+```
+
+Restart your shell so these changes take effect.
+
+### Shell completions
+
+When manually installing bunenv, completion scripts help expand commands and flags.
+
+- Bash completion ships with bunenv and is loaded by `bunenv init`.
+- Fish completion ships with bunenv and is loaded by `bunenv init`.
+- Zsh completion ships with bunenv, but you may need to add completions to `FPATH`:
+
+```bash
+# assuming bunenv is installed to ~/.bunenv
+FPATH=~/.bunenv/completions:"$FPATH"
+
+autoload -U compinit
+compinit
 ```
 
 ## Usage
