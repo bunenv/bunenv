@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+set -e
+
+if [ "$1" = "--debug" ]; then
+  export BUNENV_DEBUG=1
+  shift
+fi
+
+if [ -n "$BUNENV_DEBUG" ]; then
+  # https://web.archive.org/web/20221105082147/https://wiki-dev.bash-hackers.org/scripting/debuggingtips#making_xtrace_more_useful
+  export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+  set -x
+fi
+
+abort() {
+  { if [ "$#" -eq 0 ]; then cat -
+    else echo "bunenv: $*"
+    fi
+  } >&2
+  exit 1
+}
+
+if [ -z "${BUNENV_ROOT}" ]; then
+  BUNENV_ROOT="${HOME}/.bunenv"
+else
+  BUNENV_ROOT="${BUNENV_ROOT%/}"
+fi
+export BUNENV_ROOT
+
+if [ -z "${BUNENV_DIR}" ]; then
+  BUNENV_DIR="$PWD"
+else
+  [[ $BUNENV_DIR == /* ]] || BUNENV_DIR="$PWD/$BUNENV_DIR"
+  cd "$BUNENV_DIR" 2>/dev/null || abort "cannot change working directory to \`$BUNENV_DIR'"
+  BUNENV_DIR="$PWD"
+  cd "$OLDPWD"
+fi
+export BUNENV_DIR
+
+[ -n "$BUNENV_ORIG_PATH" ] || export BUNENV_ORIG_PATH="$PATH"
+
+canonicalize() {
+  local readlink resolved_path
+  if readlink="$(type -P greadlink)" || readlink="$(type -P readlink)"; then
+    # happy path: GNU & BSD readlink, macOS 12.3+
+    if resolved_path="$("$readlink" -f "$1" 2>/dev/null)"; then
+      printf "%s\n" "$resolved_path"
+      return 0
+    fi
+    # likely macOS < 12.3 with old readlink
+    local path="$1"
+    while [ -L "$path" ]; do
+      resolved_path="$("$readlink" "$path" 2>/dev/null)"
+      [[ $resolved_path == /* ]] || resolved_path="$(cd "${path%/*}/${resolved_path%/*}" && pwd)/${resolved_path##*/}"
+      path="$resolved_path"
+    done
+    printf "%s\n" "$path"
+    return 0
+  fi
+  # fail if the argument is a symlink and was not canonicalized
+  [ ! -L "$1" ] || return 1
+}
+
+shopt -s nullglob
+
+# all this trouble just to find out where bunenv's executables live
+bunenv_bin="${BASH_SOURCE:-$0}"
+if libexec_dir="$(canonicalize "$bunenv_bin")"; then
+  libexec_dir="${libexec_dir%/*}"
+else
+  libexec_dir="${bunenv_bin%/*}"
+  [ "$libexec_dir" != "." ] || libexec_dir="$PWD"
+fi
+
+for plugin_bin in "${BUNENV_ROOT}/plugins/"*/bin; do
+  PATH="${plugin_bin}:${PATH}"
+done
+export PATH="${libexec_dir}:${PATH}"
+
+BUNENV_HOOK_PATH="${BUNENV_HOOK_PATH}:${BUNENV_ROOT}/bunenv.d"
+if [ ! "${libexec_dir%/*}"/bunenv.d -ef "$BUNENV_ROOT"/bunenv.d ]; then
+  # Add bunenv's own `bunenv.d` unless bunenv was cloned to BUNENV_ROOT
+  BUNENV_HOOK_PATH="${BUNENV_HOOK_PATH}:${libexec_dir%/*}/bunenv.d"
+fi
+BUNENV_HOOK_PATH="${BUNENV_HOOK_PATH}:/usr/etc/bunenv.d:/usr/local/etc/bunenv.d:/etc/bunenv.d:/usr/lib/bunenv/hooks"
+for plugin_hook in "${BUNENV_ROOT}/plugins/"*/etc/bunenv.d; do
+  BUNENV_HOOK_PATH="${BUNENV_HOOK_PATH}:${plugin_hook}"
+done
+BUNENV_HOOK_PATH="${BUNENV_HOOK_PATH#:}"
+export BUNENV_HOOK_PATH
+
+shopt -u nullglob
+
+
+command="$1"
+case "$command" in
+"" )
+  { bunenv---version
+    bunenv-help
+  } | abort
+  ;;
+-v | --version )
+  exec bunenv---version
+  ;;
+-h | --help )
+  exec bunenv-help
+  ;;
+* )
+  command_path="$(type -P "bunenv-$command" || true)"
+  if [ -z "$command_path" ]; then
+    if [ "$command" == "shell" ]; then
+      abort "shell integration not enabled. Run \`bunenv init' for instructions."
+    else
+      abort "no such command \`$command'"
+    fi
+  fi
+
+  shift 1
+  if [ "$1" = --help ]; then
+    if [[ "$command" == "sh-"* ]]; then
+      echo "bunenv help \"$command\""
+    else
+      exec bunenv-help "$command"
+    fi
+  else
+    exec "$command_path" "$@"
+  fi
+  ;;
+esac

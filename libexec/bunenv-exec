@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#
+# Summary: Run an executable with the selected Bun version
+#
+# Usage: bunenv exec <command> [<args>...]
+#
+# Runs an executable by first preparing PATH so that the selected Bun
+# version's `bin' directory is at the front.
+#
+# For example, if the currently selected Bun version is 1.3.10:
+#   bunenv exec bun --version
+#
+# is equivalent to:
+#   PATH="$BUNENV_ROOT/versions/1.3.10/bin:$PATH" bun --version
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+# Provide bunenv completions
+if [ "$1" = "--complete" ]; then
+  exec bunenv-shims --short
+fi
+
+BUNENV_VERSION="$(bunenv-version-name)"
+BUNENV_COMMAND="$1"
+
+if [ -z "$BUNENV_COMMAND" ]; then
+  bunenv-help --usage exec >&2
+  exit 1
+fi
+
+export BUNENV_VERSION
+BUNENV_COMMAND_PATH="$(bunenv-which "$BUNENV_COMMAND")"
+BUNENV_BIN_PATH="${BUNENV_COMMAND_PATH%/*}"
+
+IFS=$'\n' read -d '' -r -a scripts <<<"$(bunenv-hooks exec)" || true
+for script in "${scripts[@]}"; do
+  # shellcheck disable=SC1090
+  source "$script"
+done
+
+shift 1
+if [ "$BUNENV_VERSION" != "system" ]; then
+  export PATH="${BUNENV_BIN_PATH}:${PATH}"
+fi
+exec -a "$BUNENV_COMMAND" "$BUNENV_COMMAND_PATH" "$@"

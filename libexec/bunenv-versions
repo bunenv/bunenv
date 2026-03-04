@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Summary: List installed Bun versions
+# Usage: bunenv versions [--bare] [--skip-aliases]
+#
+# Lists all Bun versions found in `$BUNENV_ROOT/versions/*'.
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+unset bare
+unset skip_aliases
+# Provide bunenv completions
+for arg; do
+  case "$arg" in
+  --complete )
+    echo --bare
+    echo --skip-aliases
+    exit ;;
+  --bare ) bare=1 ;;
+  --skip-aliases ) skip_aliases=1 ;;
+  * )
+    bunenv-help --usage versions >&2
+    exit 1
+    ;;
+  esac
+done
+
+canonicalize_dir() {
+  { cd "$1" && pwd -P
+  } 2>/dev/null || echo "$1"
+}
+
+versions_dir="${BUNENV_ROOT}/versions"
+if [ -n "$skip_aliases" ]; then
+  versions_dir="$(canonicalize_dir "$versions_dir")"
+fi
+
+list_versions() {
+  local path
+  local target
+  shopt -s nullglob
+  for path in "$versions_dir"/* "$versions_dir"/lts/*; do
+    if [ -d "$path" ]; then
+      if [ ! -d "$path/bin" ]; then continue; fi
+
+      if [ -n "$skip_aliases" ] && [ -L "$path" ]; then
+        target="$(canonicalize_dir "$path")"
+        [ "${target%/*}" != "$versions_dir" ] || continue
+      fi
+      echo "${path#"${versions_dir}/"}"
+    fi
+  done
+  shopt -u nullglob
+}
+
+if [ -n "$bare" ]; then
+  list_versions
+  exit 0
+fi
+
+sort_versions() {
+  sed -E 'h; s/[~^<>=[:space:]]//g; s/^([[:digit:]])/a.\1/g; s/[+-]/./g; s/$/.0.0.0.0/; G; s/\n/ /' \
+  | LC_ALL=C sort -t. -k 1,1 -k 2,2n -k 3,3n -k 4,4n -k 5,5n \
+  | cut -d' ' -f 2-
+}
+
+versions="$(
+  if BUNENV_VERSION=system bunenv-which bun >/dev/null 2>&1; then
+    echo system
+  fi
+  list_versions | sort_versions
+)"
+
+if [ -z "$versions" ]; then
+  echo "Warning: no Bun detected on the system" >&2
+  exit 1
+fi
+
+current_version="$(bunenv-version-name || true)"
+while read -r version; do
+  if [ "$version" == "$current_version" ]; then
+    echo "* $(bunenv-version 2>/dev/null)"
+  else
+    echo "  $version"
+  fi
+done <<<"$versions"

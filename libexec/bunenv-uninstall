@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Summary: Uninstall a Bun version
+# Usage: bunenv uninstall [-f|--force] <version>
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+force=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+  -f|--force)
+    force=1
+    shift
+    ;;
+  *)
+    break
+    ;;
+  esac
+done
+
+version="$1"
+if [ -z "$version" ]; then
+  bunenv-help --usage uninstall >&2
+  exit 1
+fi
+
+version="${version#bun-v}"
+version="${version#bun-}"
+version="${version#v}"
+
+version_path="${BUNENV_ROOT}/versions/${version}"
+if [ ! -d "$version_path" ]; then
+  echo "bunenv: version '${version}' is not installed" >&2
+  exit 1
+fi
+
+if [ -z "$force" ]; then
+  printf "Uninstall Bun %s? [y/N] " "$version" >&2
+  read -r answer
+  case "$answer" in
+  y|Y|yes|YES) ;;
+  *)
+    echo "Cancelled" >&2
+    exit 1
+    ;;
+  esac
+fi
+
+rm -rf "$version_path"
+rm -f "${BUNENV_ROOT}/cache/bun-"*"-${version}.zip" "${BUNENV_ROOT}/cache/SHASUMS256-${version}.txt"
+
+bunenv-rehash
+echo "Uninstalled Bun ${version}"

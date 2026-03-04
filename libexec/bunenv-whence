@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Summary: List all Bun versions that contain the given executable
+# Usage: bunenv whence [--path] <command>
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+# Provide bunenv completions
+if [ "$1" = "--complete" ]; then
+  echo --path
+  exec bunenv-shims --short
+fi
+
+if [ "$1" = "--path" ]; then
+  print_paths="1"
+  shift
+else
+  print_paths=""
+fi
+
+whence() {
+  local command="$1"
+  bunenv-versions --bare | while read -r version; do
+    path="$(bunenv-prefix "$version")/bin/${command}"
+    if [ -x "$path" ]; then
+      [ "$print_paths" ] && echo "$path" || echo "$version"
+    fi
+  done
+}
+
+BUNENV_COMMAND="$1"
+if [ -z "$BUNENV_COMMAND" ]; then
+  bunenv-help --usage whence >&2
+  exit 1
+fi
+
+result="$(whence "$BUNENV_COMMAND")"
+[ -n "$result" ] && echo "$result"

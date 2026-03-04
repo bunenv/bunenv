@@ -1,0 +1,13 @@
+#compdef bunenv
+
+_bunenv() {
+  local completions
+
+  if [ "${#words}" -eq 2 ]; then
+    completions=(${(f)"$(bunenv help --complete-commands "${words[2]}")"})
+    _describe 'bunenv commands' completions
+  else
+    completions="$(bunenv completions ${words[2,-2]})"
+    compadd - "${(ps:\n:)completions}"
+  fi
+}

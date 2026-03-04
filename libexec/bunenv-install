@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# Summary: Download and install a Bun version
+# Usage: bunenv install <version>
+#        bunenv install --list
+#        bunenv install --list-all
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+api_root="https://api.github.com/repos/oven-sh/bun"
+download_root="https://github.com/oven-sh/bun/releases/download"
+
+# Provide bunenv completions
+if [ "$1" = "--complete" ]; then
+  echo --list
+  echo --list-all
+  exec bunenv-versions --bare
+fi
+
+http_get() {
+  if type -P curl >/dev/null 2>&1; then
+    curl -fsSL "$@"
+  elif type -P wget >/dev/null 2>&1; then
+    wget -qO- "$@"
+  else
+    echo "bunenv: requires curl or wget" >&2
+    exit 1
+  fi
+}
+
+download_file() {
+  local url="$1"
+  local output="$2"
+  if type -P curl >/dev/null 2>&1; then
+    curl -fL "$url" -o "$output"
+  elif type -P wget >/dev/null 2>&1; then
+    wget -O "$output" "$url"
+  else
+    echo "bunenv: requires curl or wget" >&2
+    exit 1
+  fi
+}
+
+github_headers=()
+if [ -n "$BUNENV_GITHUB_TOKEN" ]; then
+  github_headers=(-H "Authorization: Bearer $BUNENV_GITHUB_TOKEN")
+elif [ -n "$GITHUB_TOKEN" ]; then
+  github_headers=(-H "Authorization: Bearer $GITHUB_TOKEN")
+fi
+
+list_versions() {
+  local include_prerelease="$1"
+  local releases
+  releases="$(http_get "${github_headers[@]}" "$api_root/releases?per_page=100")"
+
+  if [ "$include_prerelease" = "1" ]; then
+    echo "$releases" \
+      | sed -n 's/.*"tag_name": "bun-v\([^"]*\)".*/\1/p' \
+      | sort -V -u
+  else
+    awk '
+      /"tag_name":/ {
+        tag=$2
+        gsub(/[",]/, "", tag)
+        sub(/^bun-v/, "", tag)
+      }
+      /"prerelease":/ {
+        prerelease=$2
+        gsub(/,/, "", prerelease)
+        if (tag != "" && prerelease == "false") {
+          print tag
+        }
+        tag=""
+      }
+    ' <<<"$releases" | sort -V -u
+  fi
+}
+
+if [ "$1" = "--list" ]; then
+  list_versions 0
+  exit 0
+fi
+
+if [ "$1" = "--list-all" ]; then
+  list_versions 1
+  exit 0
+fi
+
+version="$1"
+if [ -z "$version" ]; then
+  bunenv-help --usage install >&2
+  exit 1
+fi
+
+version="${version#bun-v}"
+version="${version#bun-}"
+version="${version#v}"
+
+if [ -d "${BUNENV_ROOT}/versions/${version}" ]; then
+  echo "bunenv: version '${version}' already installed" >&2
+  exit 1
+fi
+
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+arch="$(uname -m)"
+
+case "$os" in
+darwin*) os="darwin" ;;
+linux*) os="linux" ;;
+*)
+  echo "bunenv: unsupported OS '$os'" >&2
+  exit 1
+  ;;
+esac
+
+case "$arch" in
+arm64|aarch64) arch="aarch64" ;;
+x86_64|amd64) arch="x64" ;;
+*)
+  echo "bunenv: unsupported architecture '$arch'" >&2
+  exit 1
+  ;;
+esac
+
+target="bun-${os}-${arch}"
+if [ "$os" = "linux" ]; then
+  if ldd --version 2>&1 | grep -qi musl; then
+    target="${target}-musl"
+  fi
+fi
+
+if [ "$BUNENV_BUILD_VARIANT" = "baseline" ]; then
+  target="bun-${os}-${arch}-baseline"
+  if [ "$os" = "linux" ] && ldd --version 2>&1 | grep -qi musl; then
+    target="bun-${os}-${arch}-musl-baseline"
+  fi
+fi
+
+archive="${target}.zip"
+release_tag="bun-v${version}"
+archive_url="${download_root}/${release_tag}/${archive}"
+shasums_url="${download_root}/${release_tag}/SHASUMS256.txt"
+
+cache_dir="${BUNENV_ROOT}/cache"
+tmp_dir="${BUNENV_ROOT}/tmp/install-${version}-$$"
+version_dir="${BUNENV_ROOT}/versions/${version}"
+archive_path="${cache_dir}/${archive}"
+shasums_path="${cache_dir}/SHASUMS256-${version}.txt"
+
+mkdir -p "$cache_dir" "$tmp_dir"
+trap 'rm -rf "$tmp_dir"' EXIT
+
+download_file "$archive_url" "$archive_path"
+download_file "$shasums_url" "$shasums_path"
+
+if type -P shasum >/dev/null 2>&1; then
+  expected_sha="$(awk -v f="$archive" '$2==f {print $1}' "$shasums_path")"
+  actual_sha="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
+  if [ -z "$expected_sha" ] || [ "$expected_sha" != "$actual_sha" ]; then
+    echo "bunenv: checksum verification failed for ${archive}" >&2
+    exit 1
+  fi
+fi
+
+if ! type -P unzip >/dev/null 2>&1; then
+  echo "bunenv: requires unzip" >&2
+  exit 1
+fi
+
+unzip -q "$archive_path" -d "$tmp_dir"
+
+bun_binary="$(find "$tmp_dir" -type f -name bun | head -n1)"
+if [ -z "$bun_binary" ]; then
+  echo "bunenv: failed to locate bun binary in ${archive}" >&2
+  exit 1
+fi
+
+mkdir -p "${version_dir}/bin"
+cp "$bun_binary" "${version_dir}/bin/bun"
+chmod +x "${version_dir}/bin/bun"
+ln -sf bun "${version_dir}/bin/bunx"
+
+bunenv-rehash
+echo "Installed Bun ${version} to ${version_dir}"

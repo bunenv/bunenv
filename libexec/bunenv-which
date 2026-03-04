@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+#
+# Summary: Display the full path to an executable
+#
+# Usage: bunenv which <command>
+#
+# Displays the full path to the executable that bunenv will invoke when
+# you run the given command.
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+# Provide bunenv completions
+if [ "$1" = "--complete" ]; then
+  exec bunenv-shims --short
+fi
+
+remove_from_path() {
+  local path_to_remove="$1"
+  local path_before
+  local result=":${PATH//\~/$HOME}:"
+  while [ "$path_before" != "$result" ]; do
+    path_before="$result"
+    result="${result//:$path_to_remove:/:}"
+  done
+  result="${result%:}"
+  echo "${result#:}"
+}
+
+BUNENV_COMMAND="$1"
+
+if [ -z "$BUNENV_COMMAND" ]; then
+  bunenv-help --usage which >&2
+  exit 1
+fi
+
+BUNENV_VERSION="${BUNENV_VERSION:-$(bunenv-version-name)}"
+
+if [ "$BUNENV_VERSION" = "system" ]; then
+  PATH="$(remove_from_path "${BUNENV_ROOT}/shims")" \
+  BUNENV_COMMAND_PATH="$(command -v "$BUNENV_COMMAND" || true)"
+else
+  BUNENV_COMMAND_PATH="${BUNENV_ROOT}/versions/${BUNENV_VERSION}/bin/${BUNENV_COMMAND}"
+fi
+
+# if [[ ! -x "$RBENV_COMMAND_PATH" && -n "$GEM_HOME" && -x "${GEM_HOME}/bin/${RBENV_COMMAND}" ]]; then
+#   RBENV_COMMAND_PATH="${GEM_HOME}/bin/${RBENV_COMMAND}"
+# fi
+
+IFS=$'\n' read -d '' -r -a scripts <<<"$(bunenv-hooks which)" || true
+for script in "${scripts[@]}"; do
+  # shellcheck disable=SC1090
+  source "$script"
+done
+
+if [ -x "$BUNENV_COMMAND_PATH" ]; then
+  echo "$BUNENV_COMMAND_PATH"
+elif [ "$BUNENV_VERSION" != "system" ] && [ ! -d "${BUNENV_ROOT}/versions/${BUNENV_VERSION}" ]; then
+  echo "bunenv: version \`$BUNENV_VERSION' is not installed (set by $(bunenv-version-origin))" >&2
+  exit 1
+else
+  echo "bunenv: $BUNENV_COMMAND: command not found" >&2
+
+  versions="$(bunenv-whence "$BUNENV_COMMAND" || true)"
+  if [ -n "$versions" ]; then
+    { echo
+      echo "The \`$1' command exists in these Bun versions:"
+      echo "$versions" | sed 's/^/  /g'
+      echo
+    } >&2
+  fi
+
+  exit 127
+fi

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Summary: Display prefix for a Bun version
+# Usage: bunenv prefix [<version>]
+#
+# Displays the directory where a Bun version is installed. If no
+# version is given, `bunenv prefix' displays the location of the
+# currently selected version.
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+# Provide bunenv completions
+if [ "$1" = "--complete" ]; then
+  echo system
+  exec bunenv-versions --bare
+fi
+
+if [ -n "$1" ]; then
+  export BUNENV_VERSION="$1"
+elif [ -z "$BUNENV_VERSION" ]; then
+  BUNENV_VERSION="$(bunenv-version-name)"
+fi
+
+if [ "$BUNENV_VERSION" = "system" ]; then
+  if BUN_PATH="$(bunenv-which bun)"; then
+    BUN_PATH="${BUN_PATH%/*}"
+    BUNENV_PREFIX_PATH="${BUN_PATH%/bin}"
+    echo "${BUNENV_PREFIX_PATH:-/}"
+    exit
+  else
+    echo "bunenv: system version not found in PATH" >&2
+    exit 1
+  fi
+fi
+
+BUNENV_PREFIX_PATH="${BUNENV_ROOT}/versions/${BUNENV_VERSION}"
+if [ ! -d "$BUNENV_PREFIX_PATH" ]; then
+  echo "bunenv: version \`${BUNENV_VERSION}' not installed" >&2
+  exit 1
+fi
+
+echo "$BUNENV_PREFIX_PATH"

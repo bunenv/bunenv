@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Summary: Display the version of bunenv
+#
+# Displays the version number of this bunenv release, including the
+# current revision from git, if available.
+#
+# The format of the git revision is:
+#   <version>+<num_commits>.<git_sha>
+# where `num_commits` is the number of commits since `version` was
+# tagged.
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+version=0.0.1
+git_revision=""
+
+semver_compliant() {
+  sed -E 's/-([[:digit:]]+)-g([[:alnum:]]+)/+\1.\2/'
+}
+
+if cd "${BASH_SOURCE%/*}" 2>/dev/null && git remote -v 2>/dev/null | grep -q bunenv; then
+  git_revision="$(git describe --tags HEAD 2>/dev/null | semver_compliant || true)"
+  git_revision="${git_revision#v}"
+fi
+
+echo "bunenv ${git_revision:-$version}"

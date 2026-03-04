@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Summary: Show the current Bun version and its origin
+#
+# Shows the currently selected Bun version and how it was
+# selected. To obtain only the version string, use `bunenv
+# version-name'.
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+version_name="$(bunenv-version-name)"
+version_origin="$(bunenv-version-origin)"
+
+version_path="$(bunenv-prefix "$version_name" 2>/dev/null || true)"
+while [ -L "$version_path" ]; do
+  READLINK=$(type -p greadlink readlink 2>/dev/null | head -n1)
+  [ -n "$READLINK" ] || break
+
+  version_path=$($READLINK "$version_path")
+  ALIAS=$(basename "$version_path")
+done
+
+if [ "$version_origin" = "${BUNENV_ROOT}/version" ] && [ ! -e "$version_origin" ]; then
+  echo "$version_name${ALIAS+ => $ALIAS}"
+else
+  echo "$version_name${ALIAS+ => $ALIAS} (set by $version_origin)"
+fi

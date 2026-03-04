@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+#
+# Summary: Display help for a command
+#
+# Usage: bunenv help [--usage] COMMAND
+#
+# Parses and displays help contents from a command's source file.
+#
+# A command is considered documented if it starts with a comment block
+# that has a `Summary:' or `Usage:' section. Usage instructions can
+# span multiple lines as long as subsequent lines are indented.
+# The remainder of the comment block is displayed as extended
+# documentation.
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+# Provide bunenv completions
+if [ "$1" = "--complete" ]; then
+  echo --usage
+  exec bunenv-commands
+fi
+
+command_path() {
+  local command="$1"
+  type -P bunenv-"$command" bunenv-sh-"$command" | head -n1
+}
+
+extract_initial_comment_block() {
+  sed -ne "
+    /^#/ !{
+      q
+    }
+
+    s/^#$/# /
+
+    /^# / {
+      s/^# //
+      p
+    }
+  "
+}
+
+collect_documentation() {
+  local awk
+  awk="$(type -P gawk)" || awk="$(type -P awk)" || true
+  if [ -z "$awk" ]; then
+    echo "bunenv: cannot find awk" >&2
+    return 1
+  fi
+
+  # shellcheck disable=SC2016
+  "$awk" '
+    /^Summary:/ {
+      summary = substr($0, 10)
+      next
+    }
+
+    /^Usage:/ {
+      reading_usage = 1
+      usage = usage "\n" $0
+      next
+    }
+
+    /^( *$|       )/ && reading_usage {
+      usage = usage "\n" $0
+      next
+    }
+
+    {
+      reading_usage = 0
+      help = help "\n" $0
+    }
+
+    function escape(str) {
+      gsub(/[`\\$"]/, "\\\\&", str)
+      return str
+    }
+
+    function trim(str) {
+      sub(/^\n*/, "", str)
+      sub(/\n*$/, "", str)
+      return str
+    }
+
+    END {
+      if (usage || summary) {
+        print "summary=\"" escape(summary) "\""
+        print "usage=\"" escape(trim(usage)) "\""
+        print "help=\"" escape(trim(help)) "\""
+      }
+    }
+  '
+}
+
+documentation_for() {
+  local filename
+  filename="$(command_path "$1")"
+  if [ -n "$filename" ]; then
+    extract_initial_comment_block < "$filename" | collect_documentation
+  fi
+}
+
+print_summary() {
+  local command="$1"
+  local summary usage help
+  eval "$(documentation_for "$command")"
+
+  if [ -n "$summary" ]; then
+    printf "   %-9s   %s\n" "$command" "$summary"
+  fi
+}
+
+print_summaries() {
+  for command; do
+    print_summary "$command"
+  done
+}
+
+print_help() {
+  local command="$1"
+  local summary usage help
+  eval "$(documentation_for "$command")"
+  [ -n "$help" ] || help="$summary"
+
+  if [ -n "$usage" ] || [ -n "$summary" ]; then
+    if [ -n "$usage" ]; then
+      echo "$usage"
+    else
+      echo "Usage: bunenv ${command}"
+    fi
+    if [ -n "$help" ]; then
+      echo
+      echo "$help"
+      echo
+    fi
+  else
+    echo "Sorry, this command isn't documented yet." >&2
+    return 1
+  fi
+}
+
+print_usage() {
+  local command="$1"
+  local summary usage help
+  eval "$(documentation_for "$command")"
+  if [ -n "$usage" ]; then
+    echo "$usage"
+  else
+    echo "Usage: bunenv ${command}"
+  fi
+}
+
+if [ "$1" = "--complete-commands" ]; then
+  command_prefix="${2:-}"
+  seen=()
+  shopt -s nullglob
+  PATH_remain="$PATH"
+  # traverse PATH to find "bunenv-" prefixed commands
+  while true; do
+    path="${PATH_remain%%:*}"
+    if [ -n "$path" ]; then
+      for bunenv_command in "${path}/bunenv-"*; do
+        command_name="${bunenv_command##*/}"
+        command_name="${command_name#bunenv-}"
+        command_name="${command_name#sh-}"
+        [[ $command_name == "${command_prefix}"* ]] || continue
+        [[ " ${seen[*]} " != *" ${command_name} "* ]] || continue
+        seen+=("$command_name")
+        summary=""
+        eval "$(extract_initial_comment_block < "$bunenv_command" | collect_documentation)"
+        [ -n "$summary" ] || continue
+        printf "%s:%s\n" "$command_name" "$summary"
+      done
+    fi
+    [[ $PATH_remain == *:* ]] || break
+    PATH_remain="${PATH_remain#*:}"
+  done
+  exit 0
+fi
+
+unset usage
+if [ "$1" = "--usage" ]; then
+  usage="1"
+  shift
+fi
+
+if [ -z "$1" ] || [ "$1" == "bunenv" ]; then
+  if [ -z "$usage" ] && [ -t 1 ] && type -P man >/dev/null; then
+    MANPATH="${BASH_SOURCE%/*}/../share/man:$MANPATH" exec man bunenv
+  fi
+  echo "Usage: bunenv <command> [<args>...]"
+  [ -n "$usage" ] && exit
+  echo
+  echo "Commands to manage available Bun versions:"
+  print_summaries versions install uninstall rehash
+  echo
+  echo "Commands to view or change the current Bun version:"
+  print_summaries version local global shell
+  echo
+  echo "See \`bunenv help <command>' for information on a specific command."
+  echo "For full documentation, see: https://github.com/bunenv/bunenv#readme"
+else
+  command="$1"
+  if [ -n "$(command_path "$command")" ]; then
+    if [ -n "$usage" ]; then
+      print_usage "$command"
+    else
+      print_help "$command"
+    fi
+  else
+    echo "bunenv: no such command \`$command'" >&2
+    exit 1
+  fi
+fi

@@ -1,0 +1,18 @@
+# npm ignores
+/node_modules
+/package*/
+/tmp
+/bunenv-bunenv-*.tgz
+
+# ignores that would affect installation (via git)
+
+# bunenv
+/plugins
+/shims
+/version
+/versions
+/.bun-version
+
+# bun install cache
+/cache
+/sources

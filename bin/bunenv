@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -e
+
+script_dir="${BASH_SOURCE%/*}"
+exec "${script_dir}/../libexec/bunenv" "$@"

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Usage: bunenv version-file-write <file> <version>
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+BUNENV_VERSION_FILE="$1"
+BUNENV_VERSION="$2"
+
+if [ -z "$BUNENV_VERSION" ] || [ -z "$BUNENV_VERSION_FILE" ]; then
+  bunenv-help --usage version-file-write >&2
+  exit 1
+fi
+
+# Make sure the specified version is installed.
+bunenv-prefix "$BUNENV_VERSION" >/dev/null
+
+# Write the version out to disk.
+echo "$BUNENV_VERSION" > "$BUNENV_VERSION_FILE"

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Summary: Show the current Bun version
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+if [ -z "$BUNENV_VERSION" ]; then
+  BUNENV_VERSION_FILE="$(bunenv-version-file)"
+  BUNENV_VERSION="$(bunenv-version-file-read "$BUNENV_VERSION_FILE" || true)"
+fi
+
+IFS=$'\n' read -d '' -r -a scripts <<<"$(bunenv-hooks version-name)" || true
+for script in "${scripts[@]}"; do
+  # shellcheck disable=SC1090
+  source "$script"
+done
+
+if [ -z "$BUNENV_VERSION" ] || [ "$BUNENV_VERSION" = "system" ]; then
+  echo "system"
+  exit
+fi
+
+version_exists() {
+  local version="$1"
+  [ -d "${BUNENV_ROOT}/versions/${version}" ]
+}
+
+if version_exists "$BUNENV_VERSION"; then
+  echo "$BUNENV_VERSION"
+elif version_exists "${BUNENV_VERSION/v/}"; then
+  echo "${BUNENV_VERSION/v/}"
+elif version_exists "${BUNENV_VERSION#bun-}"; then
+  echo "${BUNENV_VERSION#bun-}"
+elif version_exists "${BUNENV_VERSION#bun-v}"; then
+  echo "${BUNENV_VERSION#bun-v}"
+else
+  echo "bunenv: version \`$BUNENV_VERSION' is not installed (set by $(bunenv-version-origin))" >&2
+  exit 1
+fi

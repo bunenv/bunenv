@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Summary: List hook scripts for a given bunenv command
+# Usage: bunenv hooks <command>
+
+set -e
+[ -n "$BUNENV_DEBUG" ] && set -x
+
+# Provide bunenv completions
+if [ "$1" = "--complete" ]; then
+  echo exec
+  echo rehash
+  echo version-name
+  echo version-origin
+  echo which
+  exit
+fi
+
+BUNENV_COMMAND="$1"
+if [ -z "$BUNENV_COMMAND" ]; then
+  bunenv-help --usage hooks >&2
+  exit 1
+fi
+
+IFS=: read -r -a hook_paths <<<"$BUNENV_HOOK_PATH"
+
+shopt -s nullglob
+for path in "${hook_paths[@]}"; do
+  for script in "$path/$BUNENV_COMMAND"/*.bash; do
+    echo "$script"
+  done
+done
+shopt -u nullglob
