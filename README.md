@@ -23,7 +23,7 @@ If a `bunenv` formula is not available yet, use the Basic Git Checkout method.
 
 ### Using Package Managers
 
-#### Homebrew (when available)
+#### Homebrew (coming soon)
 
 ```bash
 brew install bunenv
